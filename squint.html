@@ -1,0 +1,1429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ocular Alignment Bench</title>
+<style>
+  :root{
+    --ink:#0c0f0e;
+    --surface:#141817;
+    --surface-2:#1b201e;
+    --line:#2a312e;
+    --line-soft:#222826;
+    --text:#e9efea;
+    --muted:#8b958f;
+    --muted-2:#646e69;
+    --green:#2fe08a;       /* signature / measurement green */
+    --green-dim:#1f8f5a;
+    --green-deep:#0f3d28;
+    --amber:#e0a93f;
+    --red:#e0604f;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--green)}
+  button{font-family:inherit}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;align-items:center;gap:16px;
+    padding:14px 22px;
+    border-bottom:1px solid var(--line);
+    position:sticky;top:0;background:rgba(12,15,14,.86);backdrop-filter:blur(8px);z-index:20;
+  }
+  .mark{width:26px;height:26px;flex:none;position:relative}
+  .mark::before,.mark::after{content:"";position:absolute;background:var(--green)}
+  .mark::before{left:50%;top:0;width:1.5px;height:100%;transform:translateX(-50%)}
+  .mark::after{top:50%;left:0;height:1.5px;width:100%;transform:translateY(-50%)}
+  .mark span{position:absolute;inset:6px;border:1.5px solid var(--green);border-radius:50%}
+  .brand{display:flex;flex-direction:column;line-height:1.15}
+  .brand b{font-weight:600;letter-spacing:.02em;font-size:15px}
+  .brand small{color:var(--muted);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+  .spacer{flex:1}
+  .ctrl{
+    appearance:none;border:1px solid var(--line);background:var(--surface-2);color:var(--text);
+    padding:9px 16px;border-radius:8px;font-size:13.5px;cursor:pointer;letter-spacing:.01em;
+    transition:border-color .15s, background .15s, color .15s;
+  }
+  .ctrl:hover{border-color:var(--muted-2)}
+  .ctrl:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+  .ctrl.primary{border-color:var(--green-dim);color:#04140c;background:var(--green);font-weight:600}
+  .ctrl.primary:hover{background:#46e89a}
+  .ctrl:disabled{opacity:.4;cursor:not-allowed}
+
+  /* ---------- layout ---------- */
+  .console{
+    display:grid;grid-template-columns:minmax(0,1.45fr) minmax(340px,1fr);
+    gap:22px;padding:22px;max-width:1500px;margin:0 auto;align-items:start;
+  }
+  @media (max-width:980px){ .console{grid-template-columns:1fr} }
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+  .panel h2{
+    margin:0;padding:13px 16px;font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);border-bottom:1px solid var(--line-soft);font-weight:600;
+    display:flex;align-items:center;justify-content:space-between;
+  }
+  .panel .body{padding:16px}
+
+  /* ---------- viewport ---------- */
+  .viewwrap{position:relative;background:#070908;border-radius:8px;overflow:hidden;min-height:300px;
+    display:flex;align-items:center;justify-content:center}
+  .viewwrap canvas#view{max-width:100%;max-height:72vh;display:block}
+  /* reticle corner ticks */
+  .tick{position:absolute;width:16px;height:16px;border:0 solid var(--green);opacity:.5;pointer-events:none}
+  .tick.tl{top:8px;left:8px;border-top-width:1.5px;border-left-width:1.5px}
+  .tick.tr{top:8px;right:8px;border-top-width:1.5px;border-right-width:1.5px}
+  .tick.bl{bottom:8px;left:8px;border-bottom-width:1.5px;border-left-width:1.5px}
+  .tick.br{bottom:8px;right:8px;border-bottom-width:1.5px;border-right-width:1.5px}
+  .empty{color:var(--muted);text-align:center;padding:60px 20px}
+  .empty .bigmark{width:70px;height:70px;margin:0 auto 18px;position:relative;opacity:.35}
+  .empty .bigmark::before,.empty .bigmark::after{content:"";position:absolute;background:var(--green)}
+  .empty .bigmark::before{left:50%;top:0;width:1px;height:100%;transform:translateX(-50%)}
+  .empty .bigmark::after{top:50%;left:0;height:1px;width:100%;transform:translateY(-50%)}
+  .empty .bigmark i{position:absolute;inset:14px;border:1px solid var(--green);border-radius:50%}
+  .empty .bigmark i::after{content:"";position:absolute;inset:18px;border:1px solid var(--green);border-radius:50%}
+  .empty p{max-width:360px;margin:6px auto;font-size:13.5px}
+
+  .vp-status{padding:8px 2px 0;font-size:12.5px;color:var(--muted);font-family:var(--mono);min-height:20px}
+  .vp-status.ok{color:var(--green)}
+  .vp-status.warn{color:var(--amber)}
+  .vp-status.err{color:var(--red)}
+
+  /* overlay layer toggles */
+  .layers{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+  .layers label{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none}
+  .layers input{accent-color:var(--green);width:14px;height:14px}
+
+  /* eye zoom insets */
+  .zooms{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+  .zoom{background:#070908;border:1px solid var(--line-soft);border-radius:8px;overflow:hidden}
+  .zoom .zh{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--muted);
+    padding:6px 10px;border-bottom:1px solid var(--line-soft);text-transform:uppercase}
+  .zoom canvas{width:100%;display:block;background:#070908}
+
+  /* frame toolbar */
+  .frametools{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .ctrl.mini{padding:7px 12px;font-size:12.5px}
+  .ctrl.mini.on{border-color:var(--green);color:var(--green)}
+  .ft-hint{font-size:11.5px;color:var(--muted-2)}
+
+  /* processing pipeline strip */
+  .pipe{margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+  .pipe .pt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    font-weight:600;margin-bottom:10px}
+  .pcards{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+  .pcard{flex:none;width:132px;background:#0a0d0c;border:1px solid var(--line-soft);border-radius:8px;
+    overflow:hidden}
+  .pcard canvas{width:100%;display:block;background:#070908;border-bottom:1px solid var(--line-soft)}
+  .pcard .pmeta{padding:7px 9px;display:flex;flex-direction:column;gap:1px}
+  .pcard .pmeta b{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)}
+  .pcard .pmeta span{font-family:var(--mono);font-size:10px;color:var(--muted-2)}
+  .pcard.win{border-color:var(--green-dim)}
+  .pcard.win .pmeta span:last-child{color:var(--green)}
+  .pcard.miss{opacity:.62}
+  .pcard.miss .pmeta span:last-child{color:var(--red)}
+
+  /* ---------- readout ---------- */
+  .pai{display:flex;align-items:flex-end;gap:14px;margin-bottom:6px}
+  .pai .num{font-family:var(--mono);font-size:54px;line-height:.9;font-weight:600;letter-spacing:-.01em}
+  .pai .den{font-family:var(--mono);font-size:18px;color:var(--muted-2);padding-bottom:6px}
+  .pai .cap{margin-left:auto;text-align:right}
+  .pai .cap b{font-family:var(--mono);font-size:13px;display:block}
+  .pai .cap small{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .gauge{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin:10px 0 4px}
+  .gauge i{display:block;height:100%;background:linear-gradient(90deg,var(--green-dim),var(--green))}
+  .lowconf{margin-top:10px;font-size:12px;color:var(--amber);display:none;
+    border:1px solid #4a3a12;background:#1d160a;border-radius:7px;padding:8px 11px}
+  .lowconf.show{display:block}
+  .pai-card.dim .num{color:var(--muted-2)}
+
+  .group{border-top:1px solid var(--line-soft);padding:13px 0}
+  .group:first-of-type{border-top:none;padding-top:4px}
+  .group .gt{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:9px;font-weight:600}
+  .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:3px 0}
+  .row .k{font-size:13px;color:var(--muted)}
+  .row .v{font-family:var(--mono);font-size:14px;font-variant-numeric:tabular-nums}
+  .row .v.flag-bad{color:var(--amber)}
+  .row .v.muted{color:var(--muted-2)}
+  .interp{font-size:12.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--line-soft);
+    border-radius:7px;padding:9px 11px;margin-top:8px;line-height:1.45}
+  .interp .est{color:var(--muted);font-size:11.5px}
+  .invalid-note{font-size:11.5px;color:var(--amber);margin-top:6px;display:none}
+  .invalid-note.show{display:block}
+
+  .flags{display:flex;gap:18px;margin-top:6px;padding-top:13px;border-top:1px solid var(--line-soft)}
+  .flags label{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);cursor:pointer}
+  .flags input{accent-color:var(--green);width:15px;height:15px}
+
+  .exports{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+  .exports .ctrl{padding:8px 12px;font-size:12.5px}
+  .preview{margin-top:12px;background:#070908;border:1px solid var(--line-soft);border-radius:7px;
+    padding:10px;overflow:auto}
+  .preview pre{margin:0;font-family:var(--mono);font-size:11px;color:var(--muted);white-space:pre;line-height:1.5}
+
+  details.help{margin:0 22px 26px;max-width:1500px}
+  details.help summary{cursor:pointer;color:var(--muted);font-size:12.5px;letter-spacing:.04em;padding:6px 0}
+  details.help summary:hover{color:var(--text)}
+  .helpbody{font-size:13px;color:var(--muted);line-height:1.6;max-width:820px;padding:6px 0 0}
+  .helpbody b{color:var(--text);font-weight:600}
+  .helpbody code{font-family:var(--mono);font-size:12px;background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--green)}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--green);color:#04140c;font-size:13px;font-weight:600;padding:10px 18px;border-radius:8px;
+    opacity:0;pointer-events:none;transition:.2s}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+  /* ---------- filmstrip ---------- */
+  .strip-panel{max-width:1500px;margin:18px auto 0;padding:0 22px}
+  .strip-head{display:flex;align-items:baseline;gap:12px;margin-bottom:10px}
+  .strip-title{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .strip-count{font-family:var(--mono);font-size:11px;color:var(--muted-2)}
+  .strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;min-height:40px}
+  .strip-empty{color:var(--muted-2);font-size:13px;max-width:520px;padding:8px 0}
+  .pcard.thumbloading{display:none}
+  .scard{flex:none;width:150px;background:var(--surface);border:1px solid var(--line);border-radius:9px;
+    overflow:hidden;cursor:pointer;transition:border-color .15s;position:relative}
+  .scard:hover{border-color:var(--muted-2)}
+  .scard.active{border-color:var(--green);box-shadow:0 0 0 1px var(--green-dim)}
+  .scard .sthumb{width:100%;height:96px;object-fit:cover;display:block;background:#070908;border-bottom:1px solid var(--line-soft)}
+  .scard .sbody{padding:8px 9px}
+  .scard .sname{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px}
+  .scard input[type=date]{width:100%;background:var(--surface-2);border:1px solid var(--line-soft);color:var(--text);
+    font-family:var(--mono);font-size:11px;border-radius:5px;padding:4px 6px;color-scheme:dark}
+  .scard input[type=date]:focus-visible{outline:1.5px solid var(--green);outline-offset:1px}
+  .scard .sstat{display:flex;align-items:center;gap:6px;margin-top:7px;font-family:var(--mono);font-size:11px}
+  .sdot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--muted-2)}
+  .sdot.ok{background:var(--green)} .sdot.noface{background:var(--red)} .sdot.pending{background:var(--amber)} .sdot.error{background:var(--red)}
+  .sstat .sval{color:var(--text)} .sstat .slabel{color:var(--muted-2)}
+  .sx{position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:5px;border:none;
+    background:rgba(7,9,8,.7);color:var(--muted);font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .sx:hover{background:rgba(224,96,79,.85);color:#0c0f0e}
+  .sbadge{position:absolute;top:6px;left:6px;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;
+    background:rgba(7,9,8,.72);color:var(--muted);padding:2px 5px;border-radius:4px}
+
+  /* ---------- timeline ---------- */
+  .timeline-panel{max-width:1500px;margin:0 auto 26px}
+  .tl-sub{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted-2);text-transform:none;letter-spacing:.04em}
+  .tl-controls{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .seg button{appearance:none;border:none;background:var(--surface-2);color:var(--muted);
+    padding:8px 14px;font-size:12.5px;cursor:pointer;border-right:1px solid var(--line);font-family:inherit}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--green);color:#04140c;font-weight:600}
+  .tl-export{display:flex;gap:8px}
+  .chartwrap{position:relative;background:#070908;border:1px solid var(--line-soft);border-radius:9px;padding:10px 8px 4px}
+  .chart-empty{color:var(--muted-2);font-size:13px;text-align:center;padding:54px 10px}
+  #chart svg{display:block;width:100%;height:auto}
+  .chart-pt{cursor:pointer}
+  .chart-pt:hover circle{stroke:#fff}
+  .trend{font-size:12.5px;color:var(--muted);margin:12px 2px 0;line-height:1.5;min-height:18px}
+  .trend b{color:var(--text);font-family:var(--mono);font-weight:600}
+  .trend .up{color:var(--amber)} .trend .down{color:var(--green)}
+
+  .tablewrap{margin-top:16px;overflow-x:auto;border:1px solid var(--line-soft);border-radius:8px}
+  table.dtable{border-collapse:collapse;width:100%;font-size:12px}
+  .dtable th,.dtable td{padding:7px 10px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line-soft)}
+  .dtable th:first-child,.dtable td:first-child,.dtable th:nth-child(2),.dtable td:nth-child(2){text-align:left}
+  .dtable thead th{font-family:var(--sans);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;
+    position:sticky;top:0;background:var(--surface)}
+  .dtable tbody td{font-family:var(--mono);color:var(--text)}
+  .dtable tbody td.muted{color:var(--muted-2)}
+  .dtable tbody tr{cursor:pointer}
+  .dtable tbody tr:hover{background:var(--surface-2)}
+  .dtable tbody tr.active{background:#10231a}
+  .dtable tbody tr.active td:first-child{box-shadow:inset 2px 0 var(--green)}
+  .tbadge{font-size:10px;padding:1px 6px;border-radius:4px}
+  .tbadge.ok{color:var(--green);background:#0f2c1d} .tbadge.noface{color:var(--red);background:#2c1311}
+  .tbadge.pending{color:var(--amber);background:#2a2110} .tbadge.error{color:var(--red);background:#2c1311}
+</style>
+</head>
+<body>
+<header>
+  <div class="mark"><span></span></div>
+  <div class="brand"><b>Ocular Alignment Bench</b><small>squint metrology · local</small></div>
+  <div class="spacer"></div>
+  <button class="ctrl" id="loadBtn">Add photos</button>
+  <button class="ctrl" id="analyzeBtn" disabled>Analyze</button>
+  <button class="ctrl primary" id="analyzeAllBtn" disabled>Analyze all</button>
+  <input type="file" id="file" accept="image/*" multiple hidden />
+</header>
+
+<section class="strip-panel" id="stripPanel">
+  <div class="strip-head">
+    <span class="strip-title">Photo set</span>
+    <span class="strip-count" id="stripCount">no photos</span>
+  </div>
+  <div class="strip" id="strip">
+    <div class="strip-empty" id="stripEmpty">Add photos to begin — each gets a date (from EXIF, editable) and becomes one point on the timeline.</div>
+  </div>
+</section>
+
+<main class="console">
+  <!-- VIEWPORT -->
+  <section class="panel">
+    <h2>Viewport <span id="modelState" style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--muted-2)">loading model…</span></h2>
+    <div class="body">
+      <div class="viewwrap" id="viewwrap">
+        <div class="empty" id="empty">
+          <div class="bigmark"><i></i></div>
+          <p>Add photos above, then they analyze automatically.</p>
+          <p style="color:var(--muted-2);font-size:12px">Each photo becomes one dated point on the timeline. Green lines show exactly which points were measured, so you can check each by eye.</p>
+        </div>
+        <canvas id="view" hidden></canvas>
+        <div class="tick tl"></div><div class="tick tr"></div><div class="tick bl"></div><div class="tick br"></div>
+      </div>
+      <div class="vp-status" id="status"></div>
+
+      <div class="frametools">
+        <button class="ctrl mini" id="cropBtn">Crop to face</button>
+        <button class="ctrl mini" id="rotBtn">Rotate 90°</button>
+        <button class="ctrl mini" id="resetBtn">Reset frame</button>
+        <span class="ft-hint">crop or rotate re-analyses automatically</span>
+      </div>
+
+      <div class="layers" id="layers" hidden>
+        <label><input type="checkbox" data-layer="iris" checked> Iris + pupil</label>
+        <label><input type="checkbox" data-layer="canthi" checked> Eye corners</label>
+        <label><input type="checkbox" data-layer="psr" checked> Symmetry segments</label>
+        <label><input type="checkbox" data-layer="midline" checked> Face midline</label>
+        <label><input type="checkbox" data-layer="gaze" checked> Iris offset vector</label>
+        <label><input type="checkbox" data-layer="head" checked> Head direction</label>
+        <label><input type="checkbox" data-layer="mesh"> Landmark cloud</label>
+      </div>
+
+      <div class="zooms" id="zooms" hidden>
+        <div class="zoom"><div class="zh">Eye · image left</div><canvas id="zoomL"></canvas></div>
+        <div class="zoom"><div class="zh">Eye · image right</div><canvas id="zoomR"></canvas></div>
+      </div>
+
+      <div class="pipe" id="pipe" hidden>
+        <div class="pt">Processing pipeline — every variant tried, in order</div>
+        <div class="pcards" id="pipeCards"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- READOUT -->
+  <section class="panel">
+    <h2>Readout</h2>
+    <div class="body">
+      <div class="pai-card" id="paiCard">
+        <div class="pai">
+          <span class="num" id="paiNum">—</span><span class="den">/100</span>
+          <span class="cap"><b id="paiVerdict">awaiting</b><small>alignment index</small></span>
+        </div>
+        <div class="gauge"><i id="paiBar" style="width:0%"></i></div>
+        <div class="lowconf" id="lowconf">Low capture confidence — treat this reading as indicative only.</div>
+      </div>
+
+      <div class="group">
+        <div class="gt">Alignment (primary signal)</div>
+        <div class="row"><span class="k">Horizontal asymmetry |Δh|</span><span class="v" id="mHasym">—</span></div>
+        <div class="row"><span class="k">Vertical asymmetry |Δv|</span><span class="v" id="mVasym">—</span></div>
+        <div class="row"><span class="k">Iris pos · image-left eye</span><span class="v muted" id="mHL">—</span></div>
+        <div class="row"><span class="k">Iris pos · image-right eye</span><span class="v muted" id="mHR">—</span></div>
+        <div class="row"><span class="k">Gaze difference (approx)</span><span class="v" id="mGvd">—</span></div>
+        <div class="interp" id="interp">Load a photo to measure.</div>
+      </div>
+
+      <div class="group">
+        <div class="gt">Pupil symmetry ratio</div>
+        <div class="row"><span class="k">Left eye  nasal/temporal</span><span class="v muted" id="mPL">—</span></div>
+        <div class="row"><span class="k">Right eye  nasal/temporal</span><span class="v muted" id="mPR">—</span></div>
+        <div class="row"><span class="k">PSR (L÷R, 1.00 = symmetric)</span><span class="v" id="mPSR">—</span></div>
+        <div class="invalid-note" id="psrInvalid">Head yaw &gt; 5° — PSR is unreliable here and is excluded from the index.</div>
+      </div>
+
+      <div class="group">
+        <div class="gt">Head pose</div>
+        <div class="row"><span class="k">Yaw (turn L/R)</span><span class="v" id="mYaw">—</span></div>
+        <div class="row"><span class="k">Pitch (up/down)</span><span class="v" id="mPitch">—</span></div>
+        <div class="row"><span class="k">Roll (tilt)</span><span class="v" id="mRoll">—</span></div>
+      </div>
+
+      <div class="group">
+        <div class="gt">Capture quality</div>
+        <div class="row"><span class="k">Eye-region sharpness</span><span class="v" id="mSharp">—</span></div>
+        <div class="row"><span class="k">Eye width (measured px)</span><span class="v" id="mEyePx">—</span></div>
+        <div class="row"><span class="k">|Δh| precision (±1σ)</span><span class="v" id="mSigma">—</span></div>
+        <div class="row"><span class="k">Confidence multiplier</span><span class="v" id="mQ">—</span></div>
+        <div class="flags">
+          <label><input type="checkbox" id="fGlasses"> Wearing glasses</label>
+          <label><input type="checkbox" id="fMirror"> Photo is mirrored</label>
+        </div>
+      </div>
+
+      <div class="exports">
+        <button class="ctrl" id="copyRow" disabled>Copy row</button>
+        <button class="ctrl" id="copyHead" disabled>Copy header + row</button>
+        <button class="ctrl" id="copyJson" disabled>Copy JSON</button>
+        <button class="ctrl" id="dlCsv" disabled>Download .csv</button>
+      </div>
+      <div class="preview" id="previewWrap" hidden><pre id="preview"></pre></div>
+    </div>
+  </section>
+</main>
+
+<section class="panel timeline-panel" id="timelinePanel">
+  <h2>Timeline <span class="tl-sub" id="tlSub"></span></h2>
+  <div class="body">
+    <div class="tl-controls">
+      <div class="seg" id="metricSeg">
+        <button data-metric="hasym" class="on">Horizontal |Δh|</button>
+        <button data-metric="vasym">Vertical |Δv|</button>
+        <button data-metric="pai">Alignment index</button>
+      </div>
+      <div class="tl-export">
+        <button class="ctrl mini" id="copyAll" disabled>Copy all rows</button>
+        <button class="ctrl mini" id="dlAll" disabled>Download all .csv</button>
+      </div>
+    </div>
+    <div class="chartwrap" id="chartwrap">
+      <div class="chart-empty" id="chartEmpty">Analyze photos to plot the trend over time.</div>
+      <div id="chart"></div>
+    </div>
+    <div class="trend" id="trend"></div>
+    <div class="tablewrap" id="tablewrap" hidden>
+      <table class="dtable" id="dtable"><thead></thead><tbody></tbody></table>
+    </div>
+  </div>
+</section>
+
+<details class="help">
+  <summary>How to read this / what it does and doesn't measure</summary>
+  <div class="helpbody">
+    <p>This is a consistent <b>observer</b>, not a diagnosis. It measures geometry from one photo and reports repeatable numbers; it does not output clinical prism-diopter values or labels like "mild/severe".</p>
+    <p><b>Precision (±σ):</b> |Δh| is only as precise as the pixels behind it. The app measures the eye width in pixels and reports an empirical noise estimate (σ ≈ 1.6 / eye-px): at ~25 px per eye the reading is ±0.07 (useless); at ~90 px it's ±0.018. Readings smaller than ~1.5σ are flagged as within noise. The refine pass auto-zooms to the face <i>from the original pixels</i> to maximise this — and only adopts the zoom when it genuinely gains resolution.</p>
+    <p><b>Horizontal asymmetry |Δh|</b> is the most trustworthy signal. Each eye's iris is located between its outer and inner corner (0 = outer, 1 = inner); for aligned eyes both sit near the same fraction, so |Δh| ≈ 0. A larger value means one iris is shifted relative to the other. Because it's an <i>inter-eye difference</i>, it doesn't depend on the person looking dead-center. Track this column in your sheet across photos.</p>
+    <p><b>Gaze difference (approx)</b> converts that asymmetry to degrees using fixed constants — it's an <code>estimate</code> for intuition, not a calibrated angle. Trust the raw asymmetry over the degrees.</p>
+    <p><b>PSR</b> is the nasal-vs-temporal distance ratio per eye (the PRD metric). It's perspective-sensitive, so it's auto-excluded from the index when head yaw exceeds 5°.</p>
+    <p><b>Head pose</b> is read from the model's face transform. The on-image arrow is the visual check — if it points where the head faces, the angles are oriented correctly. Yaw mainly acts as a gate on PSR.</p>
+    <p><b>Anatomical side & mirror:</b> eyes are labelled by their position <i>in the image</i>. For a normal front photo, image-left = the subject's right eye. Front-camera selfies are often mirrored — tick "Photo is mirrored" so the interpretation text flips sides. The numbers themselves are side-agnostic in magnitude.</p>
+    <p><b>Timeline:</b> add several photos at once — each is dated from its EXIF capture time (editable per photo, or set manually when EXIF is missing) and analyzed automatically. The chart plots your chosen metric against date; pick <b>Horizontal |Δh|</b> (the trustworthy one), <b>Vertical |Δv|</b>, or the composite <b>Alignment index</b>. Click any point — or any table row — to open that photo in the viewport and verify its overlay. <b>Download all .csv</b> exports every analyzed photo as one dated table for your own records.</p>
+    <p><b>If no face is found</b>, the <b>Processing pipeline</b> strip under the photo shows every variant the analyzer tried, in order: your current frame, all four rotations (fixes sideways EXIF orientation), three centre crops, a 2×2 then 3×3 overlapping tile scan (so a face that is tiny in the full frame — a distant or full-body shot — becomes large inside one tile), and a CPU retry if the GPU path misbehaves. After any hit, a final <b>refine</b> pass zooms to the detected face and re-measures at full working resolution. The winning variant is outlined in green; failed ones are dimmed with ✗ — so you can see exactly where it broke. The usual fix: select that photo, press <b>Crop to face</b>, drag a tight box around the face, and it re-analyses automatically. Cropping also <i>improves</i> precision, since the eyes get more pixels.</p>
+    <p><b>If the model won't load</b> when you double-click the file, your browser is blocking it over <code>file://</code>. Open a terminal in the file's folder and run <code>python3 -m http.server</code>, then visit <code>http://localhost:8000/squint.html</code>.</p>
+    <p>Tunable constants (degree mappings, index weights, max resolution) live in the <code>CFG</code> object at the top of the script.</p>
+  </div>
+</details>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35";
+
+/* ----------------------- tunable config ----------------------- */
+const CFG = {
+  maxDim: 1400,          // longest image side used for processing/display (px)
+  degPerH: 90,           // maps full outer→inner iris travel (Δ=1.0) to this many degrees
+  degPerV: 60,           // vertical equivalent
+  gvdCap: 40,            // degrees that count as "maximal" deviation for the index
+  yawGate: 5,            // |yaw| above this (deg) invalidates PSR
+  weights: { gvd:0.7, psr:0.2, head:0.1 },   // PAI weighting (from PRD #2)
+  lowConf: 0.6,          // below this Q_conf the reading is flagged
+  sigmaK: 1.6,           // |Δh| noise model: sigma ≈ sigmaK / eye-width-in-pixels (measured empirically)
+  eyePxRef: 90,          // eye width (px) at which resolution stops penalising confidence
+  irisDiamMm: 11.7
+};
+
+/* MediaPipe landmark indices */
+const IDX = {
+  irisA: 468, irisAring:[469,470,471,472],
+  irisB: 473, irisBring:[474,475,476,477],
+  corners: [33,133,263,362],
+  uppers: [159,386], lowers:[145,374],
+  midline: [10,168,4,152]   // forehead, sellion, nose base, chin
+};
+
+/* ----------------------- tiny vec helpers ----------------------- */
+const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
+const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
+const mul=(a,s)=>({x:a.x*s,y:a.y*s});
+const dot=(a,b)=>a.x*b.x+a.y*b.y;
+const len=a=>Math.hypot(a.x,a.y);
+const norm=a=>{const l=len(a)||1;return {x:a.x/l,y:a.y/l};};
+const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+const deg=r=>r*180/Math.PI;
+
+/* ----------------------- head pose from transform ----------------------- */
+/* column-major 4x4 -> yaw/pitch/roll degrees (magnitudes are what gate PSR;
+   the on-image arrow is the visual sign check). */
+function eulerFromMatrix(m){
+  const fwd={x:m[8],y:m[9],z:m[10]};   // local +Z in camera space
+  const up ={x:m[4],y:m[5],z:m[6]};    // local +Y
+  const yaw   = deg(Math.atan2(fwd.x, fwd.z));
+  const pitch = deg(Math.atan2(-fwd.y, Math.hypot(fwd.x, fwd.z)));
+  const roll  = deg(Math.atan2(-up.x, up.y));
+  return { yaw, pitch, roll, fwd2d:{x:fwd.x, y:-fwd.y} };
+}
+
+/* ----------------------- eye assignment (mirror-safe) ----------------------- */
+/* Returns the two eyes labelled by image side, each with iris/inner/outer/upper/lower
+   in PIXEL coords, without trusting MediaPipe's L/R index naming. */
+function buildEyes(P){
+  const irisA=P(IDX.irisA), irisB=P(IDX.irisB);
+  const corners=IDX.corners.map(P);
+  const uppers=IDX.uppers.map(P), lowers=IDX.lowers.map(P);
+  const midX = IDX.midline.reduce((s,i)=>s+P(i).x,0)/IDX.midline.length;
+
+  // nearest two corners to each iris
+  const near2=(iris)=>corners.map(c=>({c,d:len(sub(c,iris))})).sort((a,b)=>a.d-b.d).slice(0,2).map(o=>o.c);
+  const near1=(iris,arr)=>arr.map(c=>({c,d:len(sub(c,iris))})).sort((a,b)=>a.d-b.d)[0].c;
+
+  const mk=(iris)=>{
+    const cs=near2(iris);
+    // inner = nearer midline, outer = farther
+    const d0=Math.abs(cs[0].x-midX), d1=Math.abs(cs[1].x-midX);
+    const inner = d0<d1?cs[0]:cs[1];
+    const outer = d0<d1?cs[1]:cs[0];
+    return { iris, inner, outer, upper:near1(iris,uppers), lower:near1(iris,lowers) };
+  };
+  const eA=mk(irisA), eB=mk(irisB);
+  // order by image x (smaller x = image-left)
+  const leftImg = eA.iris.x<=eB.iris.x ? eA : eB;
+  const rightImg= eA.iris.x<=eB.iris.x ? eB : eA;
+  return { leftImg, rightImg, midX };
+}
+
+function eyePositions(e){
+  const axis=sub(e.inner,e.outer), w=len(axis)||1, ax=norm(axis);
+  const h = dot(sub(e.iris,e.outer),ax)/w;            // 0 outer .. 1 inner
+  const vAxis=sub(e.lower,e.upper), hgt=len(vAxis)||1, vy=norm(vAxis);
+  const v = dot(sub(e.iris,e.upper),vy)/hgt;          // 0 top .. 1 bottom
+  const dInner=len(sub(e.iris,e.inner)), dOuter=len(sub(e.iris,e.outer));
+  const psrRatio = dOuter>0 ? dInner/dOuter : 0;       // nasal/temporal
+  return { h, v, psrRatio, center:mid(e.inner,e.outer), w, hgt };
+}
+
+/* ----------------------- core metrics ----------------------- */
+function computeMetrics(landmarks, matrix, W, H){
+  const P=(i)=>({x:landmarks[i].x*W, y:landmarks[i].y*H});
+  const eyes=buildEyes(P);
+  const L=eyePositions(eyes.leftImg), R=eyePositions(eyes.rightImg);
+
+  const hAsym = L.h - R.h;
+  const vAsym = L.v - R.v;
+  const gvdH = Math.abs(hAsym)*CFG.degPerH;
+  const gvdV = Math.abs(vAsym)*CFG.degPerV;
+  const gvd  = Math.hypot(gvdH, gvdV);
+  const psrGlobal = R.psrRatio>0 ? L.psrRatio/R.psrRatio : 0;
+
+  const head = matrix ? eulerFromMatrix(matrix) : {yaw:0,pitch:0,roll:0,fwd2d:{x:0,y:0}};
+  const psrValid = Math.abs(head.yaw) <= CFG.yawGate;
+
+  return { eyes, L, R, hAsym, vAsym, gvdH, gvdV, gvd, psrGlobal, head, psrValid };
+}
+
+/* ----------------------- sharpness (Laplacian variance) on eye crops ----------------------- */
+function laplacianVar(ctx, cx, cy, r){
+  const x0=Math.max(0,Math.round(cx-r)), y0=Math.max(0,Math.round(cy-r));
+  const w=Math.min(ctx.canvas.width-x0, Math.round(r*2));
+  const h=Math.min(ctx.canvas.height-y0, Math.round(r*2));
+  if(w<6||h<6) return 0;
+  const d=ctx.getImageData(x0,y0,w,h).data;
+  const g=new Float64Array(w*h);
+  for(let i=0;i<w*h;i++){ g[i]=0.299*d[i*4]+0.587*d[i*4+1]+0.114*d[i*4+2]; }
+  let mean=0,n=0; const vals=[];
+  for(let y=1;y<h-1;y++)for(let x=1;x<w-1;x++){
+    const i=y*w+x;
+    const lap=4*g[i]-g[i-1]-g[i+1]-g[i-w]-g[i+w];
+    vals.push(lap); mean+=lap; n++;
+  }
+  mean/=n||1; let varr=0;
+  for(const v of vals) varr+=(v-mean)*(v-mean);
+  return varr/(n||1);
+}
+
+/* ----------------------- quality multiplier ----------------------- */
+function qConf(sharpNorm, head, glasses, eyePx){
+  let q=1;
+  q*= 0.35 + 0.65*sharpNorm;                      // blur penalty
+  if(eyePx) q*= Math.max(0.35, Math.min(1, eyePx/CFG.eyePxRef));   // resolution penalty
+  if(Math.abs(head.yaw)>8)  q*= Math.max(0.4, 1-(Math.abs(head.yaw)-8)/60);
+  if(Math.abs(head.pitch)>15) q*= 0.9;
+  if(glasses) q*=0.7;
+  return Math.max(0, Math.min(1,q));
+}
+
+/* ----------------------- composite index (PAI) ----------------------- */
+function computePAI(m, glasses){
+  const gvdComp = Math.min(1, m.gvd/CFG.gvdCap);
+  const psrComp = m.psrValid ? Math.min(1, Math.abs(m.psrGlobal-1)) : 0;
+  const headPen = Math.min(1, (Math.abs(m.head.roll) + Math.max(0,Math.abs(m.head.yaw)-10))/45);
+  const w=CFG.weights;
+  // renormalise weights if PSR excluded so the index stays on 0..1
+  const wsum = w.gvd + (m.psrValid?w.psr:0) + w.head;
+  const dev = (w.gvd*gvdComp + (m.psrValid?w.psr*psrComp:0) + w.head*headPen)/wsum;
+  return Math.round(100*(1-dev));
+}
+
+/* =====================================================================
+   APP
+===================================================================== */
+const $=id=>document.getElementById(id);
+let landmarker=null, current=null;   // current = {dispW, dispH} of the baked working frame
+let metrics=null, lastQ=1, lastPAI=null;
+const view=$('view'), vctx=view.getContext('2d', {willReadFrequently:true});
+
+/* ---- model init (GPU with CPU fallback) ---- */
+const WASM_URL="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+const MODEL_URL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+let currentDelegate='GPU';
+
+async function ensureLandmarker(delegate){
+  const fileset=await FilesetResolver.forVisionTasks(WASM_URL);
+  return FaceLandmarker.createFromOptions(fileset,{
+    baseOptions:{ modelAssetPath:MODEL_URL, delegate },
+    runningMode:"IMAGE",
+    numFaces:1,
+    outputFacialTransformationMatrixes:true,
+    minFaceDetectionConfidence:0.3,
+    minFacePresenceConfidence:0.3
+  });
+}
+let modelStatus='loading';   // 'loading' | 'ready' | 'failed'
+async function initModel(){
+  modelStatus='loading'; landmarker=null;
+  $('modelState').textContent='loading model…';
+  $('modelState').style.color='var(--muted-2)'; $('modelState').style.cursor='default';
+  updateButtons();
+  try{
+    try{ landmarker=await ensureLandmarker('GPU'); currentDelegate='GPU'; }
+    catch(g){ console.warn('GPU init failed, using CPU', g); landmarker=await ensureLandmarker('CPU'); currentDelegate='CPU'; }
+    modelStatus='ready';
+    $('modelState').textContent='model ready · '+currentDelegate.toLowerCase();
+    $('modelState').style.color='var(--green)'; $('modelState').style.cursor='default';
+    updateButtons();
+    if(items.some(i=>i.status!=='ok')) analyzeAll();   // auto-start if photos were added during load
+  }catch(e){
+    console.error(e);
+    landmarker=null; modelStatus='failed';
+    $('modelState').textContent='model failed — tap to retry';
+    $('modelState').style.color='var(--red)'; $('modelState').style.cursor='pointer';
+    updateButtons();
+    setStatus('Model could not load — most often this is the browser blocking it over file://. Run a local server (see "How to read this") and reload, or tap "model failed" to retry.','err');
+  }
+}
+$('modelState').addEventListener('click',()=>{ if(modelStatus==='failed') initModel(); });
+initModel();
+
+function setStatus(t,cls=''){ const s=$('status'); s.textContent=t; s.className='vp-status '+cls; }
+function refreshAnalyzeBtn(){ updateButtons(); }
+function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),1400); }
+
+/* ---- frame state: original bitmap + rotation + crop region ----
+   frame.rot    : quarter-turns clockwise (0..3) applied to the original
+   frame.region : rect in *rotated-original* pixel space; null = full frame   */
+let original=null;                  // {bitmap, w, h, exif, filename, lastMod}
+let frame={rot:0, region:null};
+let baseCanvas=null;                // clean working frame at display res (what detect() sees)
+let srcCanvas=null;                 // same frame at high res, for the zoom insets
+let lastDetectPath='';
+let cropMode=false, dragA=null;
+
+/* ===================== photo collection (timeline) ===================== */
+let items=[];                 // each item also serves as `original` when active
+let active=null;
+let idc=0;
+let timelineMetric='hasym';   // 'hasym' | 'vasym' | 'pai'
+let busy=false, running=false;
+
+function exifDate(ex){
+  const s = ex && (ex.dateTimeOriginal || ex.dateTime);
+  if(s){ const m=s.match(/^(\d{4}):(\d{2}):(\d{2})/);
+    if(m){ const str=`${m[1]}-${m[2]}-${m[3]}`, ms=Date.parse(str+'T00:00:00'); if(!isNaN(ms)) return {str,ms,src:'exif'}; } }
+  return null;
+}
+function fileDate(lastMod){ const str=new Date(lastMod).toISOString().slice(0,10);
+  return {str, ms:Date.parse(str+'T00:00:00'), src:'file'}; }
+function makeThumb(bmp){
+  const TW=150,TH=96,cv=document.createElement('canvas'); cv.width=TW; cv.height=TH;
+  const c=cv.getContext('2d'), s=Math.max(TW/bmp.width, TH/bmp.height), w=bmp.width*s, h=bmp.height*s;
+  c.drawImage(bmp,(TW-w)/2,(TH-h)/2,w,h); return cv.toDataURL('image/jpeg',0.72);
+}
+async function buildItem(file){
+  let exif={}; try{ exif=parseExif(await file.arrayBuffer()); }catch(_){}
+  let bmp;
+  try{ bmp=await createImageBitmap(file,{imageOrientation:'from-image'}); }
+  catch(_){ bmp=await createImageBitmap(file); }
+  const dt = exifDate(exif) || fileDate(file.lastModified);
+  return { id:'p'+(idc++), filename:file.name, lastMod:file.lastModified, exif,
+    bitmap:bmp, w:bmp.width, h:bmp.height, frame:{rot:0,region:null},
+    dateStr:dt.str, dateMs:dt.ms, dateSource:dt.src,
+    glasses:false, mirrored:false,
+    status:'pending', metrics:null, lastQ:1, lastPAI:null, detectPath:'', analyzedAt:'',
+    thumb:makeThumb(bmp) };
+}
+
+/* make a photo the active one driving the viewport/readout */
+function setActive(id){
+  const it=items.find(x=>x.id===id); if(!it) return;
+  active=it; original=it; frame=it.frame;
+  $('fGlasses').checked=!!it.glasses; $('fMirror').checked=!!it.mirrored;
+  cropMode=false; $('cropBtn').classList.remove('on'); view.style.cursor='';
+  bake(); pipeReset();
+  if(it.status==='ok' && it.metrics){
+    metrics=it.metrics; lastQ=it.lastQ; lastPAI=it.lastPAI; lastDetectPath=it.detectPath;
+    drawOverlay(); fillReadout(); inspectorResults(true);
+    setStatus('analyzed · '+(it.detectPath||'')+' · '+it.metrics.lm.length+' landmarks','ok');
+  } else {
+    metrics=null; resetReadout(); inspectorResults(false);
+    setStatus(it.status==='noface' ? 'no face found yet — Crop to the face and it re-analyses'
+            : it.status==='error' ? 'analysis error — see console; try Crop'
+            : 'press Analyze (or Analyze all)');
+  }
+  renderStrip(); renderTimeline(); updateButtons();
+}
+function inspectorResults(show){
+  ['layers','zooms','previewWrap'].forEach(id=>$(id).hidden=!show);
+  ['copyRow','copyHead','copyJson','dlCsv'].forEach(id=>$(id).disabled=!show);
+}
+function updateButtons(){
+  const why = !landmarker
+    ? (modelStatus==='failed' ? 'Face model failed to load — see the message below' : 'Face model is still loading…')
+    : '';
+  $('analyzeBtn').disabled = !(landmarker && active && !busy);
+  $('analyzeBtn').title = !active ? 'Add a photo first' : why || (busy?'Working…':'Analyze this photo');
+  $('analyzeAllBtn').disabled = !(landmarker && items.some(i=>i.status!=='ok') && !busy);
+  $('analyzeAllBtn').title = !items.length ? 'Add photos first'
+    : why || (busy?'Working…' : items.every(i=>i.status==='ok')?'All photos analyzed':'Analyze all photos');
+  $('loadBtn').disabled = busy;
+}
+
+/* ---- filmstrip ---- */
+function renderStrip(){
+  const strip=$('strip');
+  $('stripEmpty').style.display = items.length?'none':'block';
+  const okN=items.filter(i=>i.status==='ok').length;
+  $('stripCount').textContent = items.length ? `${items.length} photo${items.length>1?'s':''} · ${okN} analyzed` : 'no photos';
+  strip.querySelectorAll('.scard').forEach(n=>n.remove());
+  for(const it of items){
+    const card=document.createElement('div');
+    card.className='scard'+(active&&active.id===it.id?' active':'');
+    card.dataset.id=it.id;
+    const val = it.status==='ok' ? '|Δh| '+Math.abs(it.metrics.hAsym).toFixed(3)
+              : it.status==='noface' ? 'no face'
+              : it.status==='error' ? 'error' : 'not analyzed';
+    const badge = (it.frame.rot||it.frame.region)
+      ? `<span class="sbadge">${it.frame.rot?it.frame.rot*90+'°':''}${it.frame.region?(it.frame.rot?' ':'')+'crop':''}</span>` : '';
+    card.innerHTML=
+      `<img class="sthumb" src="${it.thumb}" alt="">${badge}`+
+      `<button class="sx" data-del="${it.id}" title="Remove">×</button>`+
+      `<div class="sbody"><div class="sname" title="${esc(it.filename)}">${esc(it.filename)}</div>`+
+      `<input type="date" value="${it.dateStr}" data-date="${it.id}">`+
+      `<div class="sstat"><span class="sdot ${it.status}"></span>`+
+      `<span class="${it.status==='ok'?'sval':'slabel'}">${val}</span>`+
+      `${it.dateSource!=='exif'?`<span class="slabel">· ${it.dateSource}</span>`:''}</div></div>`;
+    strip.appendChild(card);
+  }
+}
+function removeItem(id){
+  const idx=items.findIndex(x=>x.id===id); if(idx<0) return;
+  const wasActive=active&&active.id===id;
+  try{ items[idx].bitmap.close&&items[idx].bitmap.close(); }catch(_){}
+  items.splice(idx,1);
+  if(!items.length){ active=null; original=null; metrics=null;
+    view.hidden=true; $('empty').style.display=''; resetReadout(); inspectorResults(false); pipeReset(); setStatus(''); }
+  else if(wasActive){ setActive(items[Math.min(idx,items.length-1)].id); }
+  renderStrip(); renderTimeline(); updateButtons();
+}
+
+/* ---- timeline chart (self-contained SVG) ---- */
+function metricVal(it){
+  if(timelineMetric==='pai')  return it.lastPAI;
+  if(timelineMetric==='vasym')return Math.abs(it.metrics.vAsym);
+  return Math.abs(it.metrics.hAsym);
+}
+function metricLabel(){ return timelineMetric==='pai'?'Alignment index':timelineMetric==='vasym'?'Vertical |Δv|':'Horizontal |Δh|'; }
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderTimeline(){
+  const ok=items.filter(i=>i.status==='ok').sort((a,b)=>a.dateMs-b.dateMs);
+  const has=ok.length>0;
+  $('chartEmpty').style.display=has?'none':'block';
+  $('chart').style.display=has?'block':'none';
+  $('copyAll').disabled=$('dlAll').disabled=!has;
+  $('tablewrap').hidden=items.length===0;
+  $('tlSub').textContent = has ? `${metricLabel()} · ${ok.length} point${ok.length>1?'s':''}` : '';
+  renderTable();
+  if(!has){ $('trend').innerHTML=''; return; }
+
+  const W=900,H=320, padL=54,padR=22,padT=18,padB=46;
+  const xs=ok.map(i=>i.dateMs); let xmin=Math.min(...xs), xmax=Math.max(...xs);
+  if(xmin===xmax){ xmin-=86400000; xmax+=86400000; }
+  const xr=xmax-xmin; xmin-=xr*0.04; xmax+=xr*0.04;
+  const vals=ok.map(metricVal);
+  let ymin=0, ymax;
+  if(timelineMetric==='pai'){ ymin=Math.max(0,Math.floor((Math.min(...vals)-5)/10)*10); ymax=100; }
+  else ymax=Math.max(0.05, Math.max(...vals)*1.2);
+  const X=t=>padL+(t-xmin)/(xmax-xmin)*(W-padL-padR);
+  const Y=v=>padT+(1-(v-ymin)/(ymax-ymin))*(H-padT-padB);
+  const mono='font-family="ui-monospace,monospace"';
+
+  let g='';
+  for(let i=0;i<=4;i++){ const v=ymin+(ymax-ymin)*i/4, y=Y(v);
+    g+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="#222826"/>`;
+    g+=`<text x="${padL-8}" y="${(y+3.5).toFixed(1)}" fill="#646e69" font-size="11" ${mono} text-anchor="end">${timelineMetric==='pai'?v.toFixed(0):v.toFixed(3)}</text>`; }
+  const fmtD=ms=>new Date(ms).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+  const fmtF=ms=>new Date(ms).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+  let xl='';
+  if(ok.length<=7){ for(const it of ok){ const x=X(it.dateMs);
+    xl+=`<text x="${x.toFixed(1)}" y="${H-padB+18}" fill="#646e69" font-size="10.5" ${mono} text-anchor="middle">${fmtD(it.dateMs)}</text>`; } }
+  else { [xmin,(xmin+xmax)/2,xmax].forEach((t,i)=>{ const x=X(t);
+    xl+=`<text x="${x.toFixed(1)}" y="${H-padB+18}" fill="#646e69" font-size="10.5" ${mono} text-anchor="${i===0?'start':i===2?'end':'middle'}">${fmtF(t)}</text>`; }); }
+  let path=''; ok.forEach((it,i)=>{ path+=(i?'L':'M')+X(it.dateMs).toFixed(1)+' '+Y(metricVal(it)).toFixed(1)+' '; });
+  let pts=''; ok.forEach(it=>{ const x=X(it.dateMs),y=Y(metricVal(it)),act=active&&active.id===it.id;
+    const v=metricVal(it), lbl=timelineMetric==='pai'?v.toFixed(0):v.toFixed(3);
+    pts+=`<g class="chart-pt" data-id="${it.id}"><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${act?6:4.2}" fill="${act?'#2fe08a':'#0c0f0e'}" stroke="#2fe08a" stroke-width="${act?2:1.6}"/>`+
+      `${ok.length<=10?`<text x="${x.toFixed(1)}" y="${(y-11).toFixed(1)}" fill="${act?'#2fe08a':'#8b958f'}" font-size="10.5" ${mono} text-anchor="middle">${lbl}</text>`:''}</g>`; });
+  $('chart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${metricLabel()} over time">`+
+    g+`<line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#2a312e"/>`+xl+
+    `<path d="${path}" fill="none" stroke="#1f8f5a" stroke-width="1.8"/>`+pts+`</svg>`;
+
+  const first=ok[0], last=ok[ok.length-1];
+  if(ok.length>=2){
+    const dv=metricVal(last)-metricVal(first);
+    const better = timelineMetric==='pai' ? dv>0 : dv<0;
+    const flat = Math.abs(dv) < (timelineMetric==='pai'?0.5:0.002);
+    const dir = flat?'flat':better?'improving':'worsening', cls=flat?'':better?'down':'up';
+    const span=Math.round((last.dateMs-first.dateMs)/86400000);
+    const f=v=>timelineMetric==='pai'?v.toFixed(0):v.toFixed(3);
+    $('trend').innerHTML=`Across ${ok.length} readings over <b>${span}</b> day${span===1?'':'s'}: ${metricLabel()} moved from <b>${f(metricVal(first))}</b> to <b>${f(metricVal(last))}</b> — <span class="${cls}">${dir}</span>. <span style="color:var(--muted-2)">Consistency across captures matters more than any single value.</span>`;
+  } else $('trend').innerHTML='One reading so far. Add photos from other dates to build the trend.';
+}
+
+function renderTable(){
+  const rows=[...items].sort((a,b)=>a.dateMs-b.dateMs);
+  const t=$('dtable');
+  t.tHead.innerHTML='<tr><th>Date</th><th>File</th><th>Status</th><th>|Δh|</th><th>|Δv|</th><th>Gaze°</th><th>PSR</th><th>Yaw</th><th>Index</th><th>Conf</th></tr>';
+  t.tBodies[0].innerHTML=rows.map(it=>{
+    const a=active&&active.id===it.id?' class="active"':'';
+    if(it.status!=='ok')
+      return `<tr data-id="${it.id}"${a}><td>${it.dateStr}</td><td>${esc(it.filename)}</td><td><span class="tbadge ${it.status}">${it.status}</span></td>`+'<td class="muted">—</td>'.repeat(7)+'</tr>';
+    const m=it.metrics;
+    return `<tr data-id="${it.id}"${a}><td>${it.dateStr}</td><td>${esc(it.filename)}</td><td><span class="tbadge ok">ok</span></td>`+
+      `<td>${Math.abs(m.hAsym).toFixed(3)}</td><td>${Math.abs(m.vAsym).toFixed(3)}</td><td>${m.gvd.toFixed(1)}</td>`+
+      `<td>${m.psrValid?m.psrGlobal.toFixed(3):'—'}</td><td>${(m.head.yaw>=0?'+':'')+m.head.yaw.toFixed(1)}</td><td>${it.lastPAI}</td><td>${it.lastQ.toFixed(2)}</td></tr>`;
+  }).join('');
+}
+
+/* ---- batch analyze ---- */
+async function analyzeAll(){
+  if(busy || !landmarker) return;
+  const todo=items.filter(i=>i.status!=='ok');
+  if(!todo.length){ updateButtons(); return; }
+  busy=true; updateButtons();
+  try{
+    for(let i=0;i<todo.length;i++){
+      setStatus(`analyzing ${i+1}/${todo.length} · ${todo[i].filename}…`);
+      setActive(todo[i].id);
+      try{ await analyze(); }
+      catch(err){ console.error('analyze failed for', todo[i].filename, err);
+        todo[i].status='error'; renderStrip(); renderTimeline(); }
+    }
+  } finally {
+    busy=false; updateButtons();
+  }
+  const okN=items.filter(i=>i.status==='ok').length;
+  setStatus(`batch complete · ${okN}/${items.length} analyzed`, okN===items.length?'ok':'warn');
+}
+
+const rotDims=(rot,w,h)=> (rot%2 ? {w:h,h:w} : {w,h});
+function fullRegion(){ const d=rotDims(frame.rot, original.w, original.h); return {x:0,y:0,w:d.w,h:d.h}; }
+function regionNow(){ return frame.region || fullRegion(); }
+function clampRegion(r,d){
+  const x=Math.max(0,Math.min(r.x,d.w-8)), y=Math.max(0,Math.min(r.y,d.h-8));
+  const w=Math.min(r.w,d.w-x), h=Math.min(r.h,d.h-y);
+  return (w<8||h<8) ? null : {x,y,w,h};
+}
+/* render the original under (rot, region) into a fresh canvas capped at maxDim */
+function renderRegion(rot, region, maxDim){
+  const d=rotDims(rot, original.w, original.h);
+  const r=region || {x:0,y:0,w:d.w,h:d.h};
+  const s=Math.min(1, maxDim/Math.max(r.w,r.h));
+  const cv=document.createElement('canvas');
+  cv.width=Math.max(2,Math.round(r.w*s)); cv.height=Math.max(2,Math.round(r.h*s));
+  const c=cv.getContext('2d');
+  c.scale(s,s); c.translate(-r.x,-r.y);
+  if(rot===1){ c.translate(d.w,0); c.rotate(Math.PI/2); }
+  else if(rot===2){ c.translate(d.w,d.h); c.rotate(Math.PI); }
+  else if(rot===3){ c.translate(0,d.h); c.rotate(-Math.PI/2); }
+  c.drawImage(original.bitmap,0,0);
+  return cv;
+}
+function bake(){
+  baseCanvas=renderRegion(frame.rot, regionNow(), CFG.maxDim);
+  view.width=baseCanvas.width; view.height=baseCanvas.height;
+  vctx.drawImage(baseCanvas,0,0);
+  current={ dispW:baseCanvas.width, dispH:baseCanvas.height };
+  srcCanvas=renderRegion(frame.rot, regionNow(), 2400);
+  view.hidden=false; $('empty').style.display='none';
+}
+function drawBase(){ vctx.drawImage(baseCanvas,0,0); }
+
+/* ---- pipeline strip (visual debug of every processing attempt) ---- */
+function pipeReset(){ $('pipeCards').innerHTML=''; $('pipe').hidden=true; }
+function pipeCard(label, canvas, text, cls=''){
+  const card=document.createElement('div'); card.className='pcard '+cls;
+  const th=document.createElement('canvas');
+  th.width=120; th.height=Math.max(34, Math.min(120, Math.round(120*canvas.height/canvas.width)));
+  th.getContext('2d').drawImage(canvas,0,0,th.width,th.height);
+  const meta=document.createElement('div'); meta.className='pmeta';
+  meta.innerHTML=`<b></b><span></span><span></span>`;
+  meta.children[0].textContent=label;
+  meta.children[1].textContent=canvas.width+'×'+canvas.height;
+  meta.children[2].textContent=text;
+  card.append(th,meta); $('pipeCards').append(card); $('pipe').hidden=false;
+}
+
+/* ---- add photos ---- */
+$('loadBtn').onclick=()=>$('file').click();
+$('file').onchange=async e=>{
+  const files=[...e.target.files]; e.target.value=''; if(!files.length) return;
+  busy=true; updateButtons();
+  let firstNew=null;
+  for(const f of files){
+    setStatus('reading '+f.name+'…');
+    let it; try{ it=await buildItem(f); }catch(err){ console.error(err); setStatus('skipped '+f.name+' (decode failed — HEIC? convert to JPG/PNG)','warn'); continue; }
+    items.push(it); if(!firstNew) firstNew=it;
+    renderStrip();
+  }
+  busy=false;
+  if(firstNew) setActive(firstNew.id);
+  renderTimeline();
+  if(landmarker) await analyzeAll();
+  else setStatus(modelStatus==='failed'
+    ? 'Photos added, but the face model failed to load — run a local server (see "How to read this") and reload, or tap "model failed" in the Viewport header to retry.'
+    : 'Photos added · model still loading — analysis starts automatically once it\'s ready.','warn');
+};
+
+/* ---- detection: single attempt + retry ladder ---- */
+function tryDetect(cv){
+  const t0=performance.now();
+  let res=null, err=null;
+  try{ res=landmarker.detect(cv); }catch(e){ err=e; console.error(e); }
+  const ms=Math.round(performance.now()-t0);
+  const ok=!err && res && res.faceLandmarks && res.faceLandmarks.length>0;
+  return {ok, res, ms, err};
+}
+function ladderSteps(){
+  const d=rotDims(frame.rot, original.w, original.h);
+  const steps=[{rot:frame.rot, region:frame.region, label:(frame.region?'crop':'full')+'·'+(frame.rot*90)+'°'}];
+  if(frame.region) steps.push({rot:frame.rot, region:null, label:'full·'+(frame.rot*90)+'°'});
+  for(let k=1;k<4;k++){ const r=(frame.rot+k)%4; steps.push({rot:r, region:null, label:'full·'+(r*90)+'°'}); }
+  const crops=[['crop·70%',.15,.15,.70,.70],['crop·50%',.25,.25,.50,.50],['crop·top',.22,.06,.56,.56]];
+  for(const [L,fx,fy,fw,fh] of crops)
+    steps.push({rot:frame.rot, region:{x:d.w*fx,y:d.h*fy,w:d.w*fw,h:d.h*fh}, label:L});
+  /* tile scan: split the frame into overlapping tiles so a face that is tiny in the
+     full frame becomes large inside one tile (each tile is detected at full working res) */
+  for(const n of [2,3]){
+    const f=Math.min(1,(1+0.3)/n), st=n>1?(1-f)/(n-1):0;
+    for(let ry=0;ry<n;ry++) for(let cx=0;cx<n;cx++)
+      steps.push({rot:frame.rot,
+        region:{x:d.w*cx*st, y:d.h*ry*st, w:d.w*f, h:d.h*f},
+        label:'tile'+n+'·r'+ry+'c'+cx});
+  }
+  // dedupe
+  const seen=new Set();
+  return steps.filter(s=>{const k=s.rot+'|'+JSON.stringify(s.region); if(seen.has(k))return false; seen.add(k); return true;});
+}
+async function _analyze(){
+  if(!landmarker||!original) return;
+  setStatus('analyzing…'); pipeReset();
+  pipeCard('decode', renderRegion(0,null,300), 'as stored · exif '+(original.exif.dateTimeOriginal?'✓':'–'));
+
+  const steps=ladderSteps();
+  let winner=null, gpuBroke=false;
+
+  for(const st of steps){
+    const cv=renderRegion(st.rot, st.region, CFG.maxDim);
+    const r=tryDetect(cv);
+    if(r.err && currentDelegate==='GPU' && !gpuBroke){
+      gpuBroke=true;
+      pipeCard(st.label, cv, '⚠ gpu error → cpu', 'miss');
+      setStatus('GPU delegate failed — reinitialising on CPU…','warn');
+      try{ landmarker=await ensureLandmarker('CPU'); currentDelegate='CPU';
+        $('modelState').textContent='model ready · cpu'; }
+      catch(e){ original.status='error'; renderStrip(); renderTimeline(); setStatus('CPU reinit failed — see console.','err'); return; }
+      const r2=tryDetect(cv);
+      if(r2.ok){ winner={st,cv,r:r2,label:st.label+'·cpu'}; pipeCard(winner.label,cv,'✓ '+r2.res.faceLandmarks[0].length+' pts · '+r2.ms+'ms','win'); break; }
+      pipeCard(st.label+'·cpu', cv, '✗ no face', 'miss'); continue;
+    }
+    if(r.ok){ winner={st,cv,r,label:st.label}; pipeCard(st.label,cv,'✓ '+r.res.faceLandmarks[0].length+' pts · '+r.ms+'ms','win'); break; }
+    pipeCard(st.label, cv, '✗ no face', 'miss');
+  }
+
+  /* GPU sometimes returns zero faces silently rather than throwing — try CPU once */
+  if(!winner && currentDelegate==='GPU'){
+    setStatus('no face on GPU path — retrying on CPU…','warn');
+    try{ landmarker=await ensureLandmarker('CPU'); currentDelegate='CPU';
+      $('modelState').textContent='model ready · cpu'; }catch(_){}
+    if(currentDelegate==='CPU'){
+      for(const st of steps.slice(0,5)){
+        const cv=renderRegion(st.rot, st.region, CFG.maxDim);
+        const r=tryDetect(cv);
+        if(r.ok){ winner={st,cv,r,label:st.label+'·cpu'}; pipeCard(winner.label,cv,'✓ '+r.res.faceLandmarks[0].length+' pts · '+r.ms+'ms','win'); break; }
+        pipeCard(st.label+'·cpu', cv, '✗ no face', 'miss');
+      }
+    }
+  }
+
+  if(!winner){
+    bake();
+    original.status='noface'; original.metrics=null;
+    renderStrip(); renderTimeline();
+    setStatus('no face in '+steps.length+' variants (rotations · crops · cpu). Press Crop and drag a tight box around the face.','err');
+    return;
+  }
+
+  /* refine: zoom to the detected face and re-measure once at full working resolution.
+     Normalized landmarks map straight into region space: rx = R.x + lm.x * R.w */
+  {
+    const d=rotDims(winner.st.rot, original.w, original.h);
+    const Rw=winner.st.region || {x:0,y:0,w:d.w,h:d.h};
+    const lm0=winner.r.res.faceLandmarks[0];
+    let nx=1e9,ny=1e9,mx=-1e9,my=-1e9;
+    for(const p of lm0){ if(p.x<nx)nx=p.x; if(p.x>mx)mx=p.x; if(p.y<ny)ny=p.y; if(p.y>my)my=p.y; }
+    const fx=Rw.x+nx*Rw.w, fy=Rw.y+ny*Rw.h, fw=(mx-nx)*Rw.w, fh=(my-ny)*Rw.h;
+    const cxc=fx+fw/2, cyc=fy+fh/2, EX=1.8;
+    const nr=clampRegion({x:cxc-fw*EX/2, y:cyc-fh*EX/2, w:fw*EX, h:fh*EX}, d);
+    /* adopt only if the re-render genuinely increases face pixels (zooming a
+       low-res source adds noise, not information) */
+    const s1=winner.cv.width/Rw.w;
+    const s2=nr?Math.min(1, CFG.maxDim/Math.max(nr.w,nr.h)):0;
+    if(nr && s2 > s1*1.10 && nr.w>=160){
+      const cv2=renderRegion(winner.st.rot, nr, CFG.maxDim);
+      const r2=tryDetect(cv2);
+      if(r2.ok){
+        pipeCard('refine', cv2, '✓ '+r2.res.faceLandmarks[0].length+' pts · '+r2.ms+'ms', 'win');
+        winner={st:{rot:winner.st.rot, region:nr}, cv:cv2, r:r2, label:winner.label+'→refine'};
+      } else {
+        pipeCard('refine', cv2, '✗ kept previous', 'miss');
+      }
+    }
+  }
+
+  /* adopt the winning frame so what you see is exactly what was measured */
+  if(winner.st.rot!==frame.rot || JSON.stringify(winner.st.region)!==JSON.stringify(frame.region)){
+    frame.rot=winner.st.rot; frame.region=winner.st.region;
+  }
+  bake();
+  lastDetectPath=winner.label;
+
+  const res=winner.r.res;
+  const lm=res.faceLandmarks[0];
+  const matrix=res.facialTransformationMatrixes && res.facialTransformationMatrixes[0]
+    ? res.facialTransformationMatrixes[0].data : null;
+
+  metrics=computeMetrics(lm, matrix, current.dispW, current.dispH);
+  metrics.lm=lm;
+
+  // sharpness on both eyes
+  const rEye=Math.max(metrics.L.w, metrics.R.w)*0.7;
+  const sv=( laplacianVar(vctx, metrics.eyes.leftImg.iris.x, metrics.eyes.leftImg.iris.y, rEye)
+           + laplacianVar(vctx, metrics.eyes.rightImg.iris.x, metrics.eyes.rightImg.iris.y, rEye) )/2;
+  const sharpNorm=Math.min(1, sv/300);
+  metrics.eyePx=(metrics.L.w+metrics.R.w)/2;                 // eye width in measured pixels
+  metrics.sigma=CFG.sigmaK/Math.max(8,metrics.eyePx);        // empirical |Δh| noise (1σ)
+  lastQ=qConf(sharpNorm, metrics.head, $('fGlasses').checked, metrics.eyePx);
+  metrics.sharpNorm=sharpNorm;
+  lastPAI=computePAI(metrics, $('fGlasses').checked);
+
+  drawOverlay();
+  fillReadout();
+  original.status='ok'; original.metrics=metrics; original.lastQ=lastQ; original.lastPAI=lastPAI;
+  original.detectPath=lastDetectPath; original.analyzedAt=new Date().toISOString();
+  renderStrip(); renderTimeline();
+  $('layers').hidden=false; $('zooms').hidden=false; $('previewWrap').hidden=false;
+  ['copyRow','copyHead','copyJson','dlCsv'].forEach(id=>$(id).disabled=false);
+  setStatus('done · '+winner.label+' · '+lm.length+' landmarks · transform '+(matrix?'ok':'n/a'),'ok');
+}
+async function analyze(){ if(running) return; running=true; try{ await _analyze(); } finally{ running=false; updateButtons(); } }
+$('analyzeBtn').onclick=analyze;
+
+/* ---- manual frame controls: rotate / crop / reset ---- */
+$('rotBtn').onclick=()=>{
+  if(!original) return;
+  frame.rot=(frame.rot+1)%4; frame.region=null;
+  bake(); metrics=null;
+  if(landmarker) analyze(); else setStatus('rotated · press Analyze');
+};
+$('resetBtn').onclick=()=>{
+  if(!original) return;
+  frame.rot=0; frame.region=null; bake();
+  original.status='pending'; original.metrics=null; metrics=null;
+  pipeReset(); resetReadout(); inspectorResults(false);
+  renderStrip(); renderTimeline(); updateButtons();
+  setStatus('frame reset to full photo · press Analyze');
+};
+$('cropBtn').onclick=()=>{
+  if(!original) return;
+  cropMode=!cropMode; dragA=null;
+  $('cropBtn').classList.toggle('on',cropMode);
+  view.style.cursor=cropMode?'crosshair':'';
+  setStatus(cropMode?'drag a box tightly around the face':'');
+};
+function evtPt(e){
+  const b=view.getBoundingClientRect();
+  return { x:(e.clientX-b.left)*view.width/b.width, y:(e.clientY-b.top)*view.height/b.height };
+}
+view.addEventListener('pointerdown',e=>{
+  if(!cropMode||!original) return;
+  dragA=evtPt(e); view.setPointerCapture(e.pointerId); e.preventDefault();
+});
+view.addEventListener('pointermove',e=>{
+  if(!cropMode||!dragA) return;
+  const b=evtPt(e);
+  drawBase();
+  vctx.save();
+  vctx.strokeStyle='#2fe08a'; vctx.lineWidth=Math.max(1.5,view.width/700);
+  vctx.setLineDash([7,5]);
+  vctx.strokeRect(Math.min(dragA.x,b.x), Math.min(dragA.y,b.y), Math.abs(b.x-dragA.x), Math.abs(b.y-dragA.y));
+  vctx.restore();
+});
+view.addEventListener('pointerup',e=>{
+  if(!cropMode||!dragA) return;
+  const b=evtPt(e);
+  const rect={x:Math.min(dragA.x,b.x), y:Math.min(dragA.y,b.y), w:Math.abs(b.x-dragA.x), h:Math.abs(b.y-dragA.y)};
+  dragA=null; cropMode=false;
+  $('cropBtn').classList.remove('on'); view.style.cursor='';
+  if(rect.w<12||rect.h<12){ metrics?drawOverlay():drawBase(); setStatus('crop cancelled'); return; }
+  const R=regionNow(), k=R.w/current.dispW;
+  const nr=clampRegion({x:R.x+rect.x*k, y:R.y+rect.y*k, w:rect.w*k, h:rect.h*k},
+                       rotDims(frame.rot, original.w, original.h));
+  if(!nr){ metrics?drawOverlay():drawBase(); setStatus('crop too small','warn'); return; }
+  frame.region=nr; bake(); metrics=null;
+  if(landmarker) analyze(); else setStatus('cropped · press Analyze');
+});
+
+/* re-evaluate when flags change (no re-detect needed) */
+$('fGlasses').onchange=()=>{ if(!active) return; active.glasses=$('fGlasses').checked;
+  if(metrics){ lastQ=qConf(metrics.sharpNorm,metrics.head,active.glasses,metrics.eyePx); lastPAI=computePAI(metrics,active.glasses);
+    active.lastQ=lastQ; active.lastPAI=lastPAI; fillReadout(); renderStrip(); renderTimeline(); } };
+$('fMirror').onchange=()=>{ if(!active) return; active.mirrored=$('fMirror').checked; if(metrics) fillReadout(); };
+$('layers').querySelectorAll('input').forEach(c=>c.onchange=()=>{ if(metrics){ drawOverlay(); } });
+
+/* ----------------------- overlay drawing ----------------------- */
+const C={ line:'#2fe08a', inner:'#5cf0a8', outer:'#13b06b', dim:'rgba(47,224,138,.35)', cloud:'rgba(47,224,138,.18)', txt:'#bdf5d6' };
+function on(layer){ return $('layers').querySelector(`[data-layer="${layer}"]`).checked; }
+
+function drawOverlay(){
+  drawBase();
+  const s=Math.max(1, current.dispW/900);   // scale strokes to image size
+  drawScene(vctx, s);
+  drawZoom('zoomL', metrics.eyes.leftImg);
+  drawZoom('zoomR', metrics.eyes.rightImg);
+}
+
+function drawScene(ctx, s){
+  const m=metrics;
+  if(on('mesh')){
+    ctx.fillStyle=C.cloud;
+    for(const p of m.lm){ ctx.fillRect(p.x*current.dispW-0.5, p.y*current.dispH-0.5,1,1); }
+  }
+  if(on('midline')){
+    ctx.strokeStyle=C.dim; ctx.lineWidth=1*s; ctx.setLineDash([6*s,5*s]);
+    const pts=IDX.midline.map(i=>({x:m.lm[i].x*current.dispW,y:m.lm[i].y*current.dispH}));
+    ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y); pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  for(const e of [m.eyes.leftImg, m.eyes.rightImg]) drawEye(ctx,e,s);
+  if(on('head') && m.head){
+    const nose={x:m.lm[1].x*current.dispW, y:m.lm[1].y*current.dispH};
+    const L=60*s, v=m.head.fwd2d, vl=Math.hypot(v.x,v.y)||1;
+    const tip={x:nose.x+v.x/vl*L*Math.min(1,Math.abs(m.head.yaw)/45+0.15), y:nose.y+v.y/vl*L*Math.min(1,Math.abs(m.head.pitch)/45+0.15)};
+    arrow(ctx, nose, tip, C.dim, 1.5*s);
+    dotc(ctx,nose,2.5*s,C.dim);
+  }
+}
+
+function drawEye(ctx,e,s){
+  const pos=eyePositions(e);
+  if(on('psr')){
+    ctx.lineWidth=1.6*s;
+    ctx.strokeStyle=C.inner; line(ctx,e.iris,e.inner);
+    ctx.strokeStyle=C.outer; line(ctx,e.iris,e.outer);
+  }
+  if(on('canthi')){
+    ctx.strokeStyle=C.dim; ctx.lineWidth=1*s; line(ctx,e.outer,e.inner);
+    dotc(ctx,e.inner,3*s,C.inner); dotc(ctx,e.outer,3*s,C.outer);
+  }
+  if(on('gaze')){
+    const c=pos.center, vec=sub(e.iris,c), tip=add(c,mul(vec,4));
+    arrow(ctx,c,tip,C.line,1.4*s);
+  }
+  if(on('iris')){
+    const r = irisRadius(e.iris);
+    ctx.strokeStyle=C.line; ctx.lineWidth=1.6*s;
+    ctx.beginPath(); ctx.arc(e.iris.x,e.iris.y, r, 0, Math.PI*2); ctx.stroke();
+    cross(ctx,e.iris,4*s,C.line,1.4*s);
+  }
+}
+
+function irisRadius(iris){
+  // find which iris (A/B) and average distance to its ring
+  const ringsA=IDX.irisAring, ringsB=IDX.irisBring;
+  const pA={x:metrics.lm[IDX.irisA].x*current.dispW,y:metrics.lm[IDX.irisA].y*current.dispH};
+  const useA = Math.hypot(iris.x-pA.x,iris.y-pA.y) < 1.0;
+  const rings = useA?ringsA:ringsB;
+  let r=0; for(const i of rings){ r+=Math.hypot(metrics.lm[i].x*current.dispW-iris.x, metrics.lm[i].y*current.dispH-iris.y); }
+  return r/rings.length;
+}
+
+function drawZoom(canvasId, e){
+  const cv=$(canvasId), cx=cv.getContext('2d');
+  const pad=e.w*1.7;
+  const sx=e.iris.x-pad, sy=e.iris.y-pad*0.75, sw=pad*2, sh=pad*1.5;
+  const ZW=320, ZH=Math.round(ZW*sh/sw);
+  cv.width=ZW; cv.height=ZH;
+  const sc=ZW/sw;
+  cx.imageSmoothingEnabled=true;
+  // draw a clean magnified crop from the high-res working frame
+  const bsc=srcCanvas.width/current.dispW;
+  cx.drawImage(srcCanvas, sx*bsc, sy*bsc, sw*bsc, sh*bsc, 0,0,ZW,ZH);
+  // draw overlay in zoom space
+  cx.save(); cx.translate(-sx*sc,-sy*sc); cx.scale(sc,sc);
+  drawEye(cx, e, 0.6/sc*Math.max(1,current.dispW/900)+0.6);
+  cx.restore();
+}
+
+/* primitives */
+function line(ctx,a,b){ ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+function dotc(ctx,p,r,c){ ctx.fillStyle=c; ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2); ctx.fill(); }
+function cross(ctx,p,r,c,w){ ctx.strokeStyle=c; ctx.lineWidth=w; ctx.beginPath();
+  ctx.moveTo(p.x-r,p.y); ctx.lineTo(p.x+r,p.y); ctx.moveTo(p.x,p.y-r); ctx.lineTo(p.x,p.y+r); ctx.stroke(); }
+function arrow(ctx,a,b,c,w){
+  ctx.strokeStyle=c; ctx.fillStyle=c; ctx.lineWidth=w; line(ctx,a,b);
+  const ang=Math.atan2(b.y-a.y,b.x-a.x), h=6*w;
+  ctx.beginPath(); ctx.moveTo(b.x,b.y);
+  ctx.lineTo(b.x-h*Math.cos(ang-0.4), b.y-h*Math.sin(ang-0.4));
+  ctx.lineTo(b.x-h*Math.cos(ang+0.4), b.y-h*Math.sin(ang+0.4));
+  ctx.closePath(); ctx.fill();
+}
+
+/* ----------------------- readout ----------------------- */
+function resetReadout(){
+  $('paiNum').textContent='—'; $('paiBar').style.width='0%'; $('paiVerdict').textContent='awaiting';
+  $('lowconf').classList.remove('show'); $('paiCard').classList.remove('dim');
+  ['mHasym','mVasym','mHL','mHR','mGvd','mPL','mPR','mPSR','mYaw','mPitch','mRoll','mSharp','mEyePx','mSigma','mQ'].forEach(id=>$(id).textContent='—');
+  $('interp').textContent='Load a photo to measure.';
+  $('psrInvalid').classList.remove('show');
+}
+
+function fillReadout(){
+  const m=metrics;
+  $('paiNum').textContent=lastPAI;
+  $('paiBar').style.width=lastPAI+'%';
+  $('paiVerdict').textContent = lastPAI>=95?'near-aligned' : lastPAI>=85?'slight':'notable';
+  const low=lastQ<CFG.lowConf;
+  $('lowconf').classList.toggle('show',low);
+  $('paiCard').classList.toggle('dim',low);
+
+  $('mHasym').textContent=Math.abs(m.hAsym).toFixed(3)+' ± '+m.sigma.toFixed(3);
+  $('mHasym').className='v'+(Math.abs(m.hAsym)<1.5*m.sigma?' muted':'');
+  $('mVasym').textContent=Math.abs(m.vAsym).toFixed(3);
+  $('mHL').textContent=m.L.h.toFixed(3);
+  $('mHR').textContent=m.R.h.toFixed(3);
+  $('mGvd').textContent='≈ '+m.gvd.toFixed(1)+'°';
+
+  $('mPL').textContent=m.L.psrRatio.toFixed(3);
+  $('mPR').textContent=m.R.psrRatio.toFixed(3);
+  const psrEl=$('mPSR'); psrEl.textContent=m.psrGlobal.toFixed(3);
+  psrEl.className='v'+(m.psrValid?'':' muted');
+  $('psrInvalid').classList.toggle('show', !m.psrValid);
+
+  const fmt=v=>(v>=0?'+':'')+v.toFixed(1)+'°';
+  $('mYaw').textContent=fmt(m.head.yaw);
+  $('mYaw').className='v'+(Math.abs(m.head.yaw)>CFG.yawGate?' flag-bad':'');
+  $('mPitch').textContent=fmt(m.head.pitch);
+  $('mRoll').textContent=fmt(m.head.roll);
+
+  $('mSharp').textContent=(m.sharpNorm*100).toFixed(0)+' / 100';
+  $('mEyePx').textContent=Math.round(m.eyePx)+' px';
+  $('mEyePx').className='v'+(m.eyePx<CFG.eyePxRef*0.6?' flag-bad':'');
+  $('mSigma').textContent='± '+m.sigma.toFixed(3);
+  const qEl=$('mQ'); qEl.textContent=lastQ.toFixed(2); qEl.className='v'+(low?' flag-bad':'');
+
+  $('interp').innerHTML=interpret(m);
+  buildPreview();
+}
+
+function interpret(m){
+  const mir=$('fMirror').checked;
+  // image-left eye = subject right (normal photo). If mirrored, flip.
+  const leftEyeSubject  = mir ? 'left'  : 'right';
+  const rightEyeSubject = mir ? 'right' : 'left';
+  const h=m.hAsym;            // L.h - R.h ; higher h = iris toward inner/nasal
+  const mag=Math.abs(h), sig=m.sigma;
+  let s;
+  if(mag < 1.5*sig){
+    s=`|Δh| ${mag.toFixed(3)} is within measurement noise at this resolution (±${sig.toFixed(3)}) — no deviation can be claimed from this frame. For a sharper reading, use a closer photo or Crop to the face.`;
+  }else if(mag<0.03){
+    s=`Eyes look horizontally symmetric (|Δh| ${mag.toFixed(3)} ± ${sig.toFixed(3)}). No clear deviation in this frame.`;
+  }else{
+    // which eye's iris is more nasal
+    const moreNasal = h>0 ? `image-left (subject's ${leftEyeSubject})` : `image-right (subject's ${rightEyeSubject})`;
+    const sev = mag>0.12?'pronounced':mag>0.06?'moderate':'mild';
+    s=`A ${sev} horizontal offset (|Δh| ${mag.toFixed(3)} ± ${sig.toFixed(3)}, ≈${m.gvd.toFixed(1)}°). The ${moreNasal} eye's iris sits more nasally — consistent with that eye turning inward relative to the other in this frame.`;
+  }
+  let v='';
+  if(Math.abs(m.vAsym)>Math.max(0.06, 1.5*sig)) v=` There's also a vertical offset (|Δv| ${Math.abs(m.vAsym).toFixed(3)}).`;
+  let warn='';
+  if(Math.abs(m.head.yaw)>CFG.yawGate) warn=` <span class="est">Head is yawed ${m.head.yaw.toFixed(0)}° — re-shoot more front-on for a cleaner reading.</span>`;
+  return s+v+` <span class="est">Degrees are an approximation; track |Δh| for trends.</span>`+warn;
+}
+
+/* ----------------------- export ----------------------- */
+function recordOf(it){
+  const m=it.metrics, ex=it.exif||{}, fr=it.frame;
+  const d=rotDims(fr.rot, it.w, it.h), R=fr.region||{x:0,y:0,w:d.w,h:d.h}, isFull=!fr.region;
+  return {
+    date: it.dateStr,
+    date_source: it.dateSource,
+    captured_exif: ex.dateTimeOriginal || ex.dateTime || '',
+    filename: it.filename,
+    image_w: it.w, image_h: it.h,
+    proc_rotation_deg: fr.rot*90,
+    proc_region: isFull ? 'full' : [R.x,R.y,R.w,R.h].map(v=>Math.round(v)).join('x'),
+    detect_path: it.detectPath||'',
+    flash: ex.flash!==undefined?ex.flash:'',
+    camera: [ex.make,ex.model].filter(Boolean).join(' '),
+    h_left: r3(m.L.h), h_right: r3(m.R.h), h_asym: r3(m.hAsym),
+    v_left: r3(m.L.v), v_right: r3(m.R.v), v_asym: r3(m.vAsym),
+    psr_left: r3(m.L.psrRatio), psr_right: r3(m.R.psrRatio),
+    psr_global: r3(m.psrGlobal), psr_valid: m.psrValid,
+    gvd_approx_deg: r1(m.gvd),
+    head_yaw_deg: r1(m.head.yaw), head_pitch_deg: r1(m.head.pitch), head_roll_deg: r1(m.head.roll),
+    sharpness_0_100: Math.round(m.sharpNorm*100),
+    eye_px: Math.round(m.eyePx||0),
+    dh_sigma: m.sigma!==undefined?r3(m.sigma):'',
+    q_conf: r2(it.lastQ),
+    pai: it.lastPAI,
+    glasses: !!it.glasses, mirrored: !!it.mirrored,
+    analyzed_at: it.analyzedAt||''
+  };
+}
+function record(){ return recordOf(original); }
+const r1=v=>Math.round(v*10)/10, r2=v=>Math.round(v*100)/100, r3=v=>Math.round(v*1000)/1000;
+function csvRow(rec){ return Object.values(rec).map(v=>{const s=String(v); return /[",\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;}).join(','); }
+function csvHead(rec){ return Object.keys(rec).join(','); }
+function allRows(){
+  const ok=items.filter(i=>i.status==='ok').sort((a,b)=>a.dateMs-b.dateMs).map(recordOf);
+  return ok.length ? csvHead(ok[0])+'\n'+ok.map(csvRow).join('\n') : '';
+}
+
+function buildPreview(){ const rec=record(); $('preview').textContent = csvHead(rec)+'\n'+csvRow(rec); }
+async function copy(text,msg){ try{ await navigator.clipboard.writeText(text); toast(msg);}catch(_){ toast('copy blocked — select the preview text'); } }
+$('copyRow').onclick =()=>copy(csvRow(record()),'row copied');
+$('copyHead').onclick=()=>{const r=record(); copy(csvHead(r)+'\n'+csvRow(r),'header + row copied');};
+$('copyJson').onclick=()=>copy(JSON.stringify(record(),null,2),'JSON copied');
+$('dlCsv').onclick=()=>{
+  const r=record(), blob=new Blob([csvHead(r)+'\n'+csvRow(r)],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=(original.filename.replace(/\.[^.]+$/,'')||'reading')+'_alignment.csv'; a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('copyAll').onclick=()=>{ const t=allRows(); if(t) copy(t, items.filter(i=>i.status==='ok').length+' rows copied'); };
+$('dlAll').onclick=()=>{
+  const t=allRows(); if(!t) return;
+  const blob=new Blob([t],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='alignment_timeline.csv'; a.click(); URL.revokeObjectURL(a.href);
+};
+
+/* ----------------------- wiring: strip / chart / table / metric ----------------------- */
+$('analyzeAllBtn').onclick=()=>analyzeAll();
+$('strip').addEventListener('click',e=>{
+  const del=e.target.closest('[data-del]'); if(del){ e.stopPropagation(); removeItem(del.dataset.del); return; }
+  if(e.target.closest('input')) return;
+  const card=e.target.closest('.scard'); if(card) setActive(card.dataset.id);
+});
+$('strip').addEventListener('change',e=>{
+  const inp=e.target.closest('[data-date]'); if(!inp) return;
+  const it=items.find(x=>x.id===inp.dataset.date); if(!it) return;
+  const ms=Date.parse(inp.value+'T00:00:00'); if(isNaN(ms)) return;
+  it.dateStr=inp.value; it.dateMs=ms; it.dateSource='manual';
+  renderStrip(); renderTimeline();
+});
+$('metricSeg').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return;
+  timelineMetric=b.dataset.metric;
+  $('metricSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('on',x===b));
+  renderTimeline();
+});
+$('chart').addEventListener('click',e=>{ const gp=e.target.closest('.chart-pt'); if(!gp) return;
+  setActive(gp.dataset.id);
+  document.querySelector('.console').scrollIntoView({behavior:'smooth',block:'center'});
+});
+$('dtable').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(!tr) return;
+  setActive(tr.dataset.id);
+  document.querySelector('.console').scrollIntoView({behavior:'smooth',block:'center'});
+});
+
+/* ----------------------- minimal EXIF (date / flash / make / model) ----------------------- */
+function parseExif(buf){
+  const dv=new DataView(buf); const out={};
+  if(dv.getUint16(0)!==0xFFD8) return out;            // not JPEG
+  let off=2;
+  while(off<dv.byteLength){
+    if(dv.getUint8(off)!==0xFF) break;
+    const marker=dv.getUint8(off+1), size=dv.getUint16(off+2);
+    if(marker===0xE1){                                  // APP1
+      if(dv.getUint32(off+4)===0x45786966){             // "Exif"
+        return readTiff(dv, off+10);
+      }
+    }
+    if(marker===0xDA) break;                            // start of scan
+    off+=2+size;
+  }
+  return out;
+}
+function readTiff(dv, base){
+  const out={};
+  const le = dv.getUint16(base)===0x4949;               // II = little-endian
+  const u16=(o)=>dv.getUint16(base+o, le);
+  const u32=(o)=>dv.getUint32(base+o, le);
+  const ifd0=u32(4);
+  const tags0={0x0132:'dateTime',0x010F:'make',0x0110:'model',0x8769:'exifPtr'};
+  const tagsE={0x9003:'dateTimeOriginal',0x9209:'flashRaw'};
+
+  function ascii(entryOff,count){
+    const abs = base + (count<=4 ? entryOff+8 : u32(entryOff+8));   // absolute byte offset
+    let s=''; for(let i=0;i<count-1;i++){ const c=dv.getUint8(abs+i); if(c===0)break; s+=String.fromCharCode(c); }
+    return s.trim();
+  }
+  function walk(dirOff, map){
+    if(dirOff<=0 || base+dirOff+2 > dv.byteLength) return 0;
+    const n=u16(dirOff); let exifPtr=0;
+    for(let i=0;i<n;i++){
+      const e=dirOff+2+i*12;
+      const tag=u16(e), type=u16(e+2), count=u32(e+4);
+      const name=map[tag]; if(!name) continue;
+      if(name==='exifPtr'){ exifPtr=u32(e+8); continue; }
+      if(type===2)      out[name]=ascii(e,count);     // ASCII string
+      else if(type===3) out[name]=u16(e+8);           // short
+      else if(type===4) out[name]=u32(e+8);           // long
+    }
+    return exifPtr;
+  }
+  const ptr=walk(ifd0,tags0);
+  if(ptr) walk(ptr,tagsE);
+  if(out.flashRaw!==undefined) out.flash=(out.flashRaw & 1)?1:0;
+  return out;
+}
+</script>
+</body>
+</html>

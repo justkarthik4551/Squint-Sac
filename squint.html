@@ -1050,10 +1050,13 @@ async function _analyze(){
   metrics.sharpNorm=sharpNorm;
   lastPAI=computePAI(metrics, $('fGlasses').checked);
 
+  /* store results on the item BEFORE fillReadout, because
+     buildPreview → recordOf(original) reads original.metrics */
+  original.status='ok'; original.metrics=metrics; original.lastQ=lastQ; original.lastPAI=lastPAI;
+  original.detectPath=lastDetectPath=winner.label; original.analyzedAt=new Date().toISOString();
+
   drawOverlay();
   fillReadout();
-  original.status='ok'; original.metrics=metrics; original.lastQ=lastQ; original.lastPAI=lastPAI;
-  original.detectPath=lastDetectPath; original.analyzedAt=new Date().toISOString();
   renderStrip(); renderTimeline();
   $('layers').hidden=false; $('zooms').hidden=false; $('previewWrap').hidden=false;
   ['copyRow','copyHead','copyJson','dlCsv'].forEach(id=>$(id).disabled=false);

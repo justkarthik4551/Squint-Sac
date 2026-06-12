@@ -577,6 +577,24 @@ function computePAI(m, glasses){
 const $=id=>document.getElementById(id);
 let landmarker=null, current=null;   // current = {dispW, dispH} of the baked working frame
 let metrics=null, lastQ=1, lastPAI=null;
+
+/* ---- frame state: original bitmap + rotation + crop region ----
+   frame.rot    : quarter-turns clockwise (0..3) applied to the original
+   frame.region : rect in *rotated-original* pixel space; null = full frame   */
+let original=null;                  // {bitmap, w, h, exif, filename, lastMod}
+let frame={rot:0, region:null};
+let baseCanvas=null;                // clean working frame at display res (what detect() sees)
+let srcCanvas=null;                 // same frame at high res, for the zoom insets
+let lastDetectPath='';
+let cropMode=false, dragA=null;
+
+/* ===================== photo collection (timeline) ===================== */
+let items=[];                 // each item also serves as `original` when active
+let active=null;
+let idc=0;
+let timelineMetric='hasym';   // 'hasym' | 'vasym' | 'pai'
+let busy=false, running=false;
+
 const view=$('view'), vctx=view.getContext('2d', {willReadFrequently:true});
 
 /* ---- model init (GPU with CPU fallback) ---- */
@@ -625,22 +643,7 @@ function setStatus(t,cls=''){ const s=$('status'); s.textContent=t; s.className=
 function refreshAnalyzeBtn(){ updateButtons(); }
 function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),1400); }
 
-/* ---- frame state: original bitmap + rotation + crop region ----
-   frame.rot    : quarter-turns clockwise (0..3) applied to the original
-   frame.region : rect in *rotated-original* pixel space; null = full frame   */
-let original=null;                  // {bitmap, w, h, exif, filename, lastMod}
-let frame={rot:0, region:null};
-let baseCanvas=null;                // clean working frame at display res (what detect() sees)
-let srcCanvas=null;                 // same frame at high res, for the zoom insets
-let lastDetectPath='';
-let cropMode=false, dragA=null;
-
-/* ===================== photo collection (timeline) ===================== */
-let items=[];                 // each item also serves as `original` when active
-let active=null;
-let idc=0;
-let timelineMetric='hasym';   // 'hasym' | 'vasym' | 'pai'
-let busy=false, running=false;
+// (Global state variables moved to top of script)
 
 function exifDate(ex){
   const s = ex && (ex.dateTimeOriginal || ex.dateTime);
